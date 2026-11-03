@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>校園守護者</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@700;900&display=swap">
+<style>
+/* Layout: full-screen first-person canvas; chalkboard-green UI panels float over it as HUD, dialogue strip, decision cards. */
+:root{
+  --board:#1d3a33;
+  --board-deep:#122621;
+  --chalk:#f1f0e6;
+  --chalk-dim:#b9c4bb;
+  --yellow:#f2cf4a;
+  --good:#7fd6a0;
+  --warn:#f0a35a;
+  --bad:#ef7b7b;
+  --line:rgba(241,240,230,.22);
+  --display:"Noto Serif TC","Songti TC","PMingLiU",serif;
+  --body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--board-deep);color:var(--chalk);font-family:var(--body);font-size:16px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:0;box-sizing:border-box;position:relative;-webkit-user-select:none;user-select:none;touch-action:none}
+#stage{position:fixed;inset:0;background:var(--board-deep)}
+canvas{display:block;width:100%;height:100%}
+button{font-family:inherit;cursor:pointer}
+button:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
+.hud{position:fixed;left:0;right:0;top:env(safe-area-inset-top,0px);display:flex;gap:12px;align-items:center;justify-content:space-between;
+  padding:10px max(16px,env(safe-area-inset-left,0px));pointer-events:none;z-index:5;flex-wrap:wrap}
+.hud .title{font-family:var(--display);font-weight:700;font-size:1.05rem;background:rgba(18,38,33,.82);padding:6px 12px;border:1px solid var(--line)}
+.hud .title small{display:block;font-family:var(--body);font-weight:400;font-size:.78rem;color:var(--chalk-dim);letter-spacing:.06em}
+.dots{display:flex;gap:6px;background:rgba(18,38,33,.82);padding:8px 10px;border:1px solid var(--line)}
+.dot{width:14px;height:14px;border:2px solid var(--chalk-dim);border-radius:50%;box-sizing:border-box}
+.dot.now{border-color:var(--yellow);background:rgba(242,207,74,.35)}
+.dot.done{background:var(--good);border-color:var(--good)}
+.hint{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(150px + env(safe-area-inset-bottom,0px));z-index:5;
+  background:rgba(18,38,33,.88);border:1px solid var(--yellow);color:var(--chalk);padding:6px 14px;font-size:.92rem;pointer-events:none;text-align:center;max-width:90vw}
+.objective{position:fixed;left:max(16px,env(safe-area-inset-left,0px));top:calc(74px + env(safe-area-inset-top,0px));z-index:5;max-width:min(360px,calc(100vw - 32px));
+  background:rgba(18,38,33,.82);border-left:4px solid var(--yellow);padding:8px 12px;font-size:.9rem;pointer-events:none}
+.dialog{position:fixed;left:50%;transform:translateX(-50%);bottom:max(14px,env(safe-area-inset-bottom,0px));width:min(760px,calc(100vw - 32px));z-index:6;
+  background:var(--board);border:2px solid var(--chalk-dim);box-shadow:0 0 0 4px var(--board-deep);padding:12px 16px 12px;min-height:84px;box-sizing:border-box}
+.dialog .who{font-family:var(--display);font-weight:700;color:var(--yellow);font-size:.95rem;letter-spacing:.04em}
+.dialog .say{margin:2px 0 8px;font-size:1.02rem}
+.dialog .next{display:block;margin-left:auto;background:none;border:1px solid var(--chalk-dim);color:var(--chalk);padding:6px 16px;font-size:.92rem}
+.dialog .next:hover{border-color:var(--yellow);color:var(--yellow)}
+.overlay{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:rgba(10,22,19,.82);
+  padding:max(12px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(12px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));box-sizing:border-box;overflow-y:auto;touch-action:pan-y;-webkit-user-select:text;user-select:text}
+.panel{width:min(820px,100%);max-height:100%;overflow-y:auto;background:var(--board);border:2px solid var(--chalk-dim);box-shadow:0 0 0 5px var(--board-deep);padding:22px clamp(16px,4vw,32px);box-sizing:border-box}
+.panel h1{font-family:var(--display);font-weight:900;font-size:clamp(1.9rem,6vw,2.8rem);margin:0 0 4px;letter-spacing:.04em;text-wrap:balance}
+.panel h2{font-family:var(--display);font-weight:700;font-size:clamp(1.25rem,3.6vw,1.6rem);margin:0 0 6px;text-wrap:balance}
+.kicker{color:var(--yellow);font-size:.82rem;letter-spacing:.14em;margin:0 0 8px}
+.panel p{margin:8px 0}
+.muted{color:var(--chalk-dim)}
+.btn{background:var(--yellow);color:#1b2a22;border:0;padding:11px 22px;font-weight:700;font-size:1rem;letter-spacing:.04em}
+.btn:hover{filter:brightness(1.08)}
+.btn.ghost{background:none;color:var(--chalk);border:1px solid var(--chalk-dim)}
+.btn.ghost:hover{border-color:var(--yellow);color:var(--yellow)}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.types{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:14px 0}
+.types span{border:1px dashed var(--chalk-dim);padding:6px 8px;text-align:center;font-size:.9rem}
+.opts{display:grid;gap:10px;margin-top:14px}
+.opt{display:grid;grid-template-columns:auto 1fr;gap:12px;text-align:left;background:var(--board-deep);color:var(--chalk);border:1px solid var(--line);padding:12px 14px;font-size:1rem;line-height:1.5}
+.opt:hover{border-color:var(--yellow)}
+.opt .k{font-family:var(--display);font-weight:900;color:var(--yellow);font-size:1.15rem}
+.opt.tried{opacity:.55}
+.badge{display:inline-block;padding:2px 10px;font-weight:700;font-size:.85rem;border:1px solid currentColor;margin-bottom:6px}
+.b-best{color:var(--good)}.b-ok{color:var(--yellow)}.b-risk{color:var(--warn)}.b-bad{color:var(--bad)}
+.timeline{display:grid;gap:8px;margin:12px 0;padding:0;list-style:none}
+.timeline li{display:grid;grid-template-columns:5.5em 1fr;gap:10px;border-top:1px solid var(--line);padding-top:8px}
+.timeline b{color:var(--yellow);font-weight:500;font-size:.9rem}
+.why{border-left:4px solid var(--chalk-dim);padding:6px 12px;margin:12px 0;background:var(--board-deep)}
+.tip{border:1px solid var(--yellow);padding:8px 12px;margin:12px 0;font-size:.95rem}
+.meter{display:flex;gap:6px;margin:8px 0}
+.meter i{flex:1;height:10px;background:var(--board-deep);border:1px solid var(--line)}
+.meter i.on{background:var(--good)}
+.sum{width:100%;border-collapse:collapse;font-size:.95rem}
+.sum td,.sum th{border-top:1px solid var(--line);padding:7px 6px;text-align:left;vertical-align:top}
+.sum th{color:var(--chalk-dim);font-weight:500;font-size:.82rem}
+.sumwrap{overflow-x:auto}
+.joy{position:fixed;left:max(22px,env(safe-area-inset-left,0px));bottom:calc(120px + env(safe-area-inset-bottom,0px));width:110px;height:110px;border-radius:50%;
+  border:2px solid var(--chalk-dim);background:rgba(18,38,33,.55);z-index:7;display:none;touch-action:none}
+.joy i{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;background:rgba(241,240,230,.55)}
+.act{position:fixed;right:max(22px,env(safe-area-inset-right,0px));bottom:calc(130px + env(safe-area-inset-bottom,0px));width:76px;height:76px;border-radius:50%;
+  background:var(--yellow);color:#1b2a22;border:0;font-weight:700;z-index:7;display:none}
+body.touch .joy,body.touch .act{display:block}
+body.touch .hint{bottom:calc(240px + env(safe-area-inset-bottom,0px))}
+.guide{position:fixed;right:max(16px,env(safe-area-inset-right,0px));top:calc(74px + env(safe-area-inset-top,0px));z-index:5;font-size:.78rem;color:var(--chalk-dim);
+  background:rgba(18,38,33,.7);padding:6px 10px;border:1px solid var(--line);pointer-events:none}
+body.touch .guide{display:none}
+@media (max-width:560px){.guide{display:none}.objective{top:calc(112px + env(safe-area-inset-top,0px))}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+
+
+<div id="stage"></div>
+
+<div class="hud" id="hud" hidden>
+  <div class="title"><span id="sceneName"></span><small id="sceneType"></small></div>
+  <div class="dots" id="dots" aria-label="進度"></div>
+</div>
+<div class="objective" id="objective" hidden></div>
+<div class="guide" id="guide" hidden>拖曳畫面轉頭 ・ WASD／方向鍵移動 ・ E 互動</div>
+<div class="hint" id="hint" hidden></div>
+<div class="dialog" id="dialog" hidden>
+  <div class="who" id="dWho"></div>
+  <div class="say" id="dSay"></div>
+  <button class="next" id="dNext">繼續</button>
+</div>
+<div class="joy" id="joy"><i id="joyK"></i></div>
+<button class="act" id="act" hidden>互動</button>
+
+<div class="overlay" id="start">
+  <div class="panel">
+    <p class="kicker">反霸凌情境演練 ・ 第一人稱</p>
+    <h1>校園守護者</h1>
+    <p>你是這所學校的學生。走進六個校園場景，親眼看見霸凌發生，然後決定你要怎麼做。每個選擇都會帶來不同的後果，包括一週後、一個月後的變化。</p>
+    <div class="types"><span>肢體霸凌</span><span>言語霸凌</span><span>關係霸凌</span><span>網路霸凌</span><span>性霸凌</span><span>反擊型霸凌</span></div>
+    <p class="muted">操作：電腦用滑鼠拖曳轉頭，WASD 或方向鍵移動，靠近同學按 E。手機用左下搖桿移動，拖曳畫面轉頭，點右下「互動」。</p>
+    <p class="muted">情境為教學模擬，人物與事件皆為虛構。內容包含同學被欺負的場面，若覺得不舒服可以隨時停下來告訴老師。</p>
+    <div class="row"><button class="btn" id="goBtn">進入校園</button></div>
+  </div>
+</div>
+<div class="overlay" id="decide" hidden><div class="panel" id="decidePanel"></div></div>
+<div class="overlay" id="result" hidden><div class="panel" id="resultPanel"></div></div>
+<div class="overlay" id="finale" hidden><div class="panel" id="finalePanel"></div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ---- 情境資料 (r: best / ok / risk / bad ; after: v=受害者 up/same/down, b=欺負者 stop/stay/angry, c=旁觀同學 help/laugh/none)
+const RATE={best:{n:'最佳處置',s:3,c:'b-best'},ok:{n:'有幫助，但不夠完整',s:2,c:'b-ok'},risk:{n:'有風險',s:1,c:'b-risk'},bad:{n:'讓情況更糟',s:0,c:'b-bad'}};
+const SC=[
+{id:1,name:'三樓走廊',type:'肢體霸凌',place:'hall',tint:0xf3e2b8,
+ objective:'下課了。走廊前面好像有人在吵，走過去看看。',
+ npcs:[{k:'v',n:'小宇',x:-0.6,z:-2.7,c:0x5b8def},{k:'b',n:'阿杰',x:0.9,z:-2.1,c:0xd9534f},{k:'f',n:'小凱',x:2.1,z:-3.2,c:0xe0a030},{k:'w',n:'小琪',x:-3.6,z:-0.6,c:0x8e6fc9}],
+ incident:[['旁白','阿杰一把將小宇推到置物櫃上，砰的一聲。小宇的筆袋被扔到地上。'],['阿杰','走路不會看路喔？撿起來啊，撿啊。'],['小凱','哈哈，他又要哭了。'],['旁白','小宇低著頭不說話，手在發抖。旁邊的小琪看了一眼，轉身走開。']],
+ options:[
+ {t:'衝上去把阿杰推開，對他大吼：「你再碰他試試看！」',r:'risk',after:{v:'same',b:'angry',c:'none'},
+  lines:[['阿杰','你誰啊？想打架是不是？'],['旁白','兩個人扭成一團，走廊瞬間擠滿圍觀的同學。巡堂老師趕到時，只看到你和阿杰在互推。']],
+  tl:['當下','你和阿杰都被帶到學務處，小宇被擠到一旁，沒有人問他發生了什麼事。','一週後','阿杰對你懷恨在心，改在放學後堵你。小宇更不敢開口。','一個月後','事情從「欺負小宇」變成「你和阿杰互相結怨」，原本的問題反而沒有被處理。'],
+  why:'出於正義感很可貴，但用肢體對抗容易讓自己受傷，也可能被視為互毆，真正被欺負的人反而被忽略。'},
+ {t:'大聲說「住手，我去叫老師！」，立刻跑去辦公室。回來後陪小宇撿起筆袋。',r:'best',after:{v:'up',b:'stop',c:'help'},
+  lines:[['阿杰','…幹嘛啦，開玩笑而已。'],['旁白','阿杰他們退了一步。你找來導師時，小宇還站在原地。導師先把小宇帶到安靜的地方，再請阿杰和小凱到學務處。'],['小宇','謝謝你…我一直不知道該怎麼說。']],
+  tl:['當下','衝突立刻中止，沒有人受傷。小宇被老師關心，也有人聽他說出整件事。','一週後','學校啟動霸凌處理程序，通知雙方家長，輔導室開始定期關心小宇。','一個月後','阿杰在輔導與規範下改變行為，小宇敢在走廊正常走路，也多了一個願意陪他的朋友：你。'],
+  why:'你沒有用暴力，也沒有走開。出聲制止加上找大人，既保護了自己，也讓學校能正式處理。這是旁觀者最安全有效的做法。'},
+ {t:'走過去帶小宇離開現場，但事後覺得他沒受傷，就不用告訴老師。',r:'ok',after:{v:'same',b:'stay',c:'none'},
+  lines:[['小宇','謝謝你帶我走…可是不要跟老師說，會被報復。'],['旁白','你點點頭。阿杰看著你們離開，什麼也沒說。']],
+  tl:['當下','小宇暫時脫身，心裡鬆了一口氣。','一週後','阿杰沒被任何人制止，又推了小宇兩次，這次在沒人的樓梯間。','一個月後','小宇開始假裝肚子痛、不想來學校。因為沒人通報，老師完全不知道。'],
+  why:'陪伴很重要，但沒有通報，欺負的人沒有被處理，同樣的事很容易再發生。通報不是告狀，是讓大人有機會保護你們。'},
+ {t:'假裝沒看到，快步走過去。不關我的事。',r:'bad',after:{v:'down',b:'stay',c:'laugh'},
+  lines:[['旁白','你低著頭走過，背後傳來阿杰的笑聲。'],['旁白','小宇抬頭，剛好看到你的背影。']],
+  tl:['當下','阿杰看到沒人阻止，更確定自己可以這樣做。','一週後','推擠變成每天固定的事，旁邊越來越多人只是看。','一個月後','小宇覺得整個班級都不在乎他。你也常想起那天的畫面，心裡不舒服。'],
+  why:'旁觀者的沉默會被欺負的人解讀成默許，也讓被欺負的人更孤單。你不一定要正面衝突，但至少可以去找大人。'}
+ ],
+ tip:'遇到肢體衝突，先確保自己的安全，用最快的方式找老師或教官來處理。'},
+
+{id:2,name:'二年三班教室',type:'言語霸凌',place:'class',tint:0xe9f0d0,
+ objective:'午休前，教室後面有一群人聚在一起，靠近聽聽看。',
+ npcs:[{k:'v',n:'小芸',x:-0.2,z:-3.2,c:0xe86f9b},{k:'b',n:'小玲',x:-1.6,z:-2.2,c:0x4aa3a2},{k:'f',n:'小婷',x:1.2,z:-2.2,c:0xcf8a3a},{k:'w',n:'阿哲',x:3.4,z:-0.2,c:0x6f8fb8}],
+ incident:[['小玲','欸，你的口音好好笑喔，再說一次「這個」。'],['小婷','哈哈哈，你講話像外星人。'],['小玲','你根本沒有朋友吧？每次都自己一個。胖妹。'],['旁白','小芸把臉埋在書裡，肩膀輕輕發抖。全班有一半的人都聽到了，沒有人抬頭。']],
+ options:[
+ {t:'跟著笑一下，因為不想成為下一個被嘲笑的人。',r:'bad',after:{v:'down',b:'stay',c:'laugh'},
+  lines:[['小玲','你看，連他也覺得好笑。'],['旁白','小芸慢慢抬頭，看到你在笑。她的眼眶紅了。']],
+  tl:['當下','小玲被笑聲鼓勵，嘲笑變本加厲。','一週後','「外星人」變成小芸的班級外號，連別班的人都開始叫。','一個月後','小芸不再舉手發言，成績和心情一起下滑。你也成了這件事的一部分，這會留在你的心裡。'],
+  why:'附和和笑聲，會讓欺負的人覺得被認同。即使你不是主導者，你的反應仍然是影響結果的一部分。'},
+ {t:'走過去平靜地說：「這樣講話很傷人，不好笑。」然後問小芸要不要一起去洗手間。',r:'ok',after:{v:'up',b:'angry',c:'none'},
+  lines:[['小玲','幹嘛，你很愛管耶。'],['旁白','小玲瞪了你一眼，但沒有再說話。小芸跟你走出教室，輕輕說了聲謝謝。']],
+  tl:['當下','這一刻有人站出來，小芸感受到被支持。','一週後','小玲換成在背後講你們，行為並沒有真正停下來。','一個月後','如果沒有老師介入，小芸還是常被嘲笑，只是更隱蔽。'],
+  why:'平靜表態很有力量，但言語霸凌通常是持續性的，單靠同學制止不一定能停下來，也需要老師和輔導室介入。'},
+ {t:'當下先陪小芸離開，午休時私下問她的感受，再一起去找導師，說明你聽到的內容。',r:'best',after:{v:'up',b:'stop',c:'help'},
+  lines:[['小芸','…我不知道可不可以說。'],['你','我有聽到，也記得她說了什麼。我陪你去。'],['導師','謝謝你們說出來。我會處理，也會讓輔導老師關心小芸。']],
+  tl:['當下','小芸感覺被理解，不再覺得是自己有問題。','一週後','導師在班上宣導尊重，並個別處理小玲。小玲被要求道歉，也要接受輔導。','一個月後','班級氣氛改變，小芸開始有人邀她一起吃午餐，嘲笑外號慢慢消失。'],
+  why:'你先照顧受害者的感受，再把事實說給可以處理的大人聽。有人證、說得具體，讓老師更容易公平處理。'},
+ {t:'低頭滑手機，覺得這種嘴巴講講的事沒那麼嚴重。',r:'risk',after:{v:'down',b:'stay',c:'none'},
+  lines:[['旁白','你把視線移開。教室的另一頭仍然傳來笑聲。']],
+  tl:['當下','小芸沒有等到任何人的回應。','一週後','每天都有人拿她的口音和身材開玩笑，她開始少說話。','一個月後','言語傷害累積成自信的崩塌，小芸出現失眠，不太願意去學校。'],
+  why:'言語霸凌看不到傷口，卻同樣會傷害人。不要因為「只是講話」就低估它。'}
+ ],
+ tip:'言語霸凌包括辱罵、嘲笑外貌、取外號等。記下時間、地點、說了什麼，是之後老師處理的重要依據。'},
+
+{id:3,name:'學生餐廳',type:'關係霸凌',place:'canteen',tint:0xf6e6c4,
+ objective:'午餐時間，餐廳另一側的氣氛有點怪，過去看看。',
+ npcs:[{k:'v',n:'小妍',x:-0.2,z:-2.4,c:0x6fb3a0},{k:'b',n:'小薇',x:-3.2,z:-3.8,c:0xd16ba5},{k:'f',n:'小欣',x:-1.8,z:-4.6,c:0xd9a441},{k:'w',n:'小雅',x:2.6,z:-1.2,c:0x6a85c9}],
+ incident:[['旁白','小妍端著餐盤，一桌一桌找位子，每一桌的人都把包包放在旁邊的椅子上。'],['小薇','（對大家小聲說）不要理她，誰跟她講話誰就是敵人。'],['小欣','她上次說我壞話，我們都不要跟她玩了。'],['旁白','小妍最後站在餐廳角落，餐盤裡的飯一口也沒動。']],
+ options:[
+ {t:'走過去，把餐盤放在小妍旁邊：「一起坐吧。」',r:'ok',after:{v:'up',b:'angry',c:'none'},
+  lines:[['小妍','…真的可以嗎？'],['旁白','小薇在遠處看著你們，用手機傳了什麼訊息。']],
+  tl:['當下','小妍不再孤單，吃了一口飯，眼眶是紅的。','一週後','小薇那群人也開始排擠你，說你「站錯邊」。','一個月後','你們兩個互相陪伴，但如果沒有大人介入，排擠只會換一種形式繼續。'],
+  why:'陪伴可以減輕孤立感，但關係霸凌是團體行為，光靠一兩位同學很難停止，也要讓導師知道。'},
+ {t:'也加入「不理她」，因為不想被小薇那群人討厭。',r:'bad',after:{v:'down',b:'stay',c:'laugh'},
+  lines:[['小薇','很好，你很聰明。'],['旁白','小妍看到你轉過頭，慢慢把餐盤端起來，走出餐廳。']],
+  tl:['當下','你得到了暫時的安全，卻也成為排擠的幫手。','一週後','整個班級幾乎都不跟小妍說話，她開始一個人躲在廁所吃飯。','一個月後','小妍請假次數變多。之後被發現時，你也得面對自己曾經參與的事實。'],
+  why:'關係霸凌需要很多人配合才能成立。每一個人的沉默和加入，都讓這個排擠更牢固。'},
+ {t:'先陪小妍坐下，午休後私下問她的感受，並一起去找導師或輔導老師，說明排擠已經持續一陣子。',r:'best',after:{v:'up',b:'stop',c:'help'},
+  lines:[['小妍','我以為只要忍耐，她們就會停。'],['輔導老師','你願意說出來很勇敢。我們一起想辦法，也會讓大家學習怎麼相處。'],['旁白','輔導老師安排了班級座談，小薇和小欣被分別約談。']],
+  tl:['當下','小妍不再孤立無援，有人陪也有人聽。','一週後','輔導老師處理排擠事件，並在班上做關係與尊重的課程。','一個月後','小妍重新交到朋友，小薇也學會處理人際衝突的方式。你也成為被信任的朋友。'],
+  why:'先陪伴、再求助，兼顧受害者的情緒和問題的處理。事件有人證，老師更容易公平處理。'},
+ {t:'覺得這是她們女生之間的小事，不要介入比較好，自己去別桌吃。',r:'risk',after:{v:'down',b:'stay',c:'none'},
+  lines:[['旁白','你坐到離得遠的位子。小妍還站在角落。']],
+  tl:['當下','小妍多站了十分鐘，最後把飯倒進廚餘桶。','一週後','每天午餐都是這樣，小妍很快就不再去餐廳。','一個月後','她感覺沒有人看見她，開始懷疑自己哪裡有問題。'],
+  why:'把關係霸凌當成「小事」，是因為它沒有明顯傷口。但被孤立的痛苦很真實，也容易影響學習和健康。'}
+ ],
+ tip:'關係霸凌包含排擠、孤立、散布謠言。求助時，說明持續多久、有誰參與，老師更容易判斷。'},
+{id:4,name:'放學後的教室',type:'網路霸凌',place:'class',tint:0xdfe3f2,
+ objective:'放學了，教室裡有幾個人圍著手機。走過去看看。',
+ npcs:[{k:'v',n:'小辰',x:-3.6,z:-3.6,c:0x5aa0c8},{k:'b',n:'阿凱',x:0.6,z:-2.0,c:0xd9534f},{k:'f',n:'阿豪',x:1.9,z:-2.8,c:0xd59a3a},{k:'w',n:'小琳',x:-1.6,z:-0.4,c:0x9a74c9}],
+ incident:[['阿凱','你們看，我把他上課睡著流口水的照片做成貼圖了，已經貼到班群組。'],['阿豪','哈哈，已經有三十個人按讚了，快傳去別班。'],['旁白','手機畫面裡，班級群組不斷跳出笑臉貼圖和留言，有人寫：「他還不退群嗎？」'],['旁白','教室另一邊，小辰看著自己的手機，臉色慢慢變白。']],
+ options:[
+ {t:'先把群組裡的貼圖、留言截圖存起來，不轉傳也不回應，隔天拿給導師或輔導老師看。',r:'best',after:{v:'up',b:'stop',c:'help'},
+  lines:[['導師','你保留了這些截圖，我才能確認是誰、什麼時候做的。謝謝你。'],['旁白','學校請群組管理員刪除貼文，並約談阿凱和阿豪。小辰的家長也被通知。']],
+  tl:['當下','證據保存完整，小辰沒有被二度傷害。','一週後','貼圖被刪除，阿凱被要求道歉並接受輔導，學校提醒全班網路使用規範。','一個月後','群組恢復正常，小辰重新有精神來學校。班上也更懂得「按讚、轉傳」也是在參與。'],
+  why:'網路上的內容容易被刪除或流傳。先留證據、不再散布，再交給可以處理的大人，是最有效的做法。若需要，也可以撥打教育部 1953 反霸凌專線求助。'},
+ {t:'私訊阿凱：「這很過分，請你刪掉。」然後什麼都沒存，也沒告訴老師。',r:'ok',after:{v:'same',b:'angry',c:'none'},
+  lines:[['阿凱','你很煩欸，這只是好玩。'],['旁白','阿凱把你的訊息截圖丟進群組：「有人覺得我過分耶。」']],
+  tl:['當下','阿凱把你的訊息公開，你成了新的目標。','一週後','貼圖已經傳到別班，沒有證據，老師也無從調查。','一個月後','小辰從群組退出，開始在學校避開所有人。'],
+  why:'勇敢提醒是好意，但私下對質可能反過來傷害自己，也讓證據消失。保存證據並通報，才是更安全的選擇。'},
+ {t:'按個笑臉、貼一張貼圖，覺得大家都在玩，這只是開玩笑。',r:'bad',after:{v:'down',b:'stay',c:'laugh'},
+  lines:[['阿凱','哈哈，連你也來了。'],['旁白','小辰看到訊息提示，手機從手裡滑到桌上。']],
+  tl:['當下','你的一個貼圖，成為三十個貼圖中的一個，也是小辰看到的一個。','一週後','照片被轉傳到別的群組，小辰的名字出現在貼圖上。','一個月後','小辰不敢再上傳任何照片，也不敢回任何訊息。之後老師調查時，你的貼圖也被列為證據之一。'],
+  why:'網路霸凌常因為大家不斷「按讚、轉傳」而被放大。看起來很小的一個動作，也會變成參與者之一。'},
+ {t:'默默退出群組，假裝沒看到這件事。',r:'risk',after:{v:'down',b:'stay',c:'none'},
+  lines:[['旁白','你退出群組，手機安靜了下來。貼圖仍然繼續在別的地方轉傳。']],
+  tl:['當下','你保護了自己，但沒有人幫小辰。','一週後','貼圖被傳到更多人手上，小辰收到匿名訊息。','一個月後','小辰換了大頭貼和帳號，但留言還在，他越來越不想出門。'],
+  why:'保護自己很合理，但離開不等於解決。至少可以截圖存證，再告訴老師。'}
+ ],
+ tip:'遇到網路霸凌：不回應、不轉傳、截圖存證（含帳號、時間）、告訴信任的大人。'},
+
+{id:5,name:'體育館走廊',type:'性霸凌',place:'hall',tint:0xd7e6ef,
+ objective:'體育課結束，走廊前面有幾位男生在起鬨。走過去看看。',
+ npcs:[{k:'v',n:'小昱',x:-0.6,z:-2.8,c:0x6aa8d6},{k:'b',n:'大偉',x:0.9,z:-2.0,c:0xd9534f},{k:'f',n:'阿威',x:2.0,z:-3.0,c:0xcf8a3a},{k:'w',n:'小哲',x:-3.4,z:-0.6,c:0x8e6fc9}],
+ incident:[['大偉','你走路為什麼那麼娘？你到底是男的還是女的？'],['阿威','哈哈，要不要檢查一下？'],['旁白','大偉他們圍著小昱，開著帶有性意味的玩笑，還伸手去拉扯他的衣服。'],['小昱','…不要這樣，我不喜歡。'],['大偉','開玩笑而已啦，你這麼小氣。']],
+ options:[
+ {t:'大聲說：「他說不要就是不要，這不是開玩笑！」然後陪小昱離開，找導師或輔導老師說明。',r:'best',after:{v:'up',b:'stop',c:'help'},
+  lines:[['大偉','…好啦好啦。'],['旁白','他們退開了。你陪著小昱走向辦公室，一路上小昱沒有說話，但點了頭。'],['輔導老師','性騷擾、性霸凌不是玩笑。學校會依性別平等教育的規定處理，也會保護你們的隱私。']],
+  tl:['當下','身體接觸中止，小昱被帶到安全的地方。','一週後','學校通報並啟動性別平等教育的處理機制，對雙方調查，小昱有輔導老師陪伴。','一個月後','小昱重新有安全感，班上也上了尊重身體界線與多元性別氣質的課。'],
+  why:'「他說不要」就是明確的界線。性霸凌涉及身體界線與性別，需要由學校性平機制處理。你不需要一個人解決，找大人才是對的。'},
+ {t:'笑著說：「好啦別玩了。」想用輕鬆的語氣化解，但沒告訴任何人。',r:'ok',after:{v:'same',b:'stay',c:'none'},
+  lines:[['大偉','好啦好啦，不玩了。'],['旁白','他們散開了，但笑聲沒有停。小昱拉好衣服快步離開。']],
+  tl:['當下','衝突暫停，但被嘲笑的感覺還在。','一週後','大偉換個方式繼續開玩笑，這次在小昱一個人時。','一個月後','小昱開始避免上體育課，因為沒人知道這件事，也沒有人處理。'],
+  why:'用輕鬆的語氣可以打斷場面，但容易把嚴重的事說成玩笑。性霸凌需要明確說「不」，也需要大人處理。'},
+ {t:'覺得這是男生之間的玩笑，不用管，繼續走。',r:'bad',after:{v:'down',b:'stay',c:'laugh'},
+  lines:[['旁白','你從他們身邊走過。背後傳來更大的笑聲和小昱的聲音：「放開我」。']],
+  tl:['當下','沒有人制止，小昱被迫忍受。','一週後','類似的玩笑每天出現，還有人拍他的影片。','一個月後','小昱開始懷疑自己哪裡不對，不想上學，也不敢告訴任何人。'],
+  why:'不論性別，任何人都可能被性霸凌。不是玩笑，也不是「男生之間」的事。身體界線被侵犯，就需要被認真對待。'},
+ {t:'偷偷拿出手機拍下來，想當作證據，但沒有制止，等一下再看看。',r:'risk',after:{v:'down',b:'stay',c:'none'},
+  lines:[['旁白','你舉起手機，小昱剛好看到鏡頭，眼神裡出現驚訝與失望。']],
+  tl:['當下','衝突持續，小昱被迫承受更久。','一週後','影片留在你的手機裡，沒有交給任何人，也有外流的風險。','一個月後','小昱得知有人拍了影片，更加不安，原本信任你的心也動搖了。'],
+  why:'記錄有時有幫助，但當下人正在被傷害，應該先制止或求援。涉及身體或隱私的影像，不要自己保存或轉傳，直接交給老師處理。'}
+ ],
+ tip:'性霸凌包含性別氣質嘲笑、帶有性意味的言語或碰觸、散播性相關影像。遇到時，用明確的話說「不」，並找老師或輔導室。'},
+
+{id:6,name:'操場籃球場',type:'反擊型霸凌',place:'yard',tint:0xcfe6f7,
+ objective:'下課時間，籃球場上有人在爭吵，走過去看看。',
+ npcs:[{k:'v',n:'小辰',x:-0.8,z:-2.4,c:0x5aa0c8},{k:'b',n:'阿勇',x:1.0,z:-2.2,c:0xd9534f},{k:'f',n:'阿彥',x:2.2,z:-3.4,c:0xcf8a3a},{k:'w',n:'小廷',x:-3.6,z:-0.4,c:0x8e6fc9}],
+ incident:[['旁白','小辰一個月來常被阿勇當面取笑、搶走籃球。今天他突然把阿勇推倒在地。'],['小辰','我受夠了！你再碰我東西，我就打你！'],['阿勇','你敢推我？你死定了！'],['旁白','小辰握著拳頭，眼睛紅紅的，全身發抖。周圍的同學圍了上來，有人開始起鬨。']],
+ options:[
+ {t:'跟著起鬨：「打啊！他活該！」也想幫小辰出一口氣。',r:'bad',after:{v:'down',b:'angry',c:'laugh'},
+  lines:[['旁白','小辰被起鬨的聲音推著，揮出了拳頭。阿勇的嘴角流血，場面失控。']],
+  tl:['當下','雙方互毆，有人受傷。','一週後','小辰被記過，學校只看到他動手。阿勇雖也受處分，但長期被欺負的事沒有被好好說明。','一個月後','原本的受害者背上了傷人的紀錄，你也因起鬨被約談。'],
+  why:'長期被欺負的人終於反擊，心情可以理解，但暴力會讓受害者失去保護，還可能讓自己受到處分。起鬨更是推波助瀾。'},
+ {t:'擠到小辰身邊，低聲說：「冷靜，先離開，我陪你去找老師，把這一個月的事全部說出來。」',r:'best',after:{v:'up',b:'stop',c:'help'},
+  lines:[['小辰','…我只是不想再被欺負了。'],['你','我知道。我作證，我看到他搶過你的球好幾次。'],['導師','謝謝你們來告訴我。我會把全部經過了解清楚，這一個月的事也會一併處理。']],
+  tl:['當下','衝突被中止，沒有人受傷。小辰情緒獲得緩和。','一週後','導師了解整個經過：長期被欺負與一次反擊。學校用輔導與規範處理雙方，不只看這一次的事。','一個月後','阿勇接受處分和輔導，小辰也學到遇到問題時求助的方法，他重新敢打球。'],
+  why:'反擊型霸凌的關鍵是別讓受害者只因最後一個動作被看見。你的作證讓老師能看見全貌，也保護小辰不被誤解。'},
+ {t:'立刻跑去找老師，說「有人在打架」，然後站在旁邊看。沒說這之前發生過什麼事。',r:'ok',after:{v:'same',b:'angry',c:'none'},
+  lines:[['導師','發生什麼事？是誰先動手的？'],['旁白','老師趕到，小辰被叫到前面，被問為什麼推人。他一時說不出話。']],
+  tl:['當下','衝突被中止，這點做得很好。','一週後','老師只看到小辰推人，初步判斷小辰先動手，家長也被通知。','一個月後','真相要在小辰朋友補充後才被了解，這段時間小辰承受了很多壓力。'],
+  why:'找大人很重要。如果你知道前因，也要一併告訴老師，這樣才不會誤判誰是受害者。'},
+ {t:'拉著旁邊的同學離開：「別看了，我們不要被牽連。」',r:'risk',after:{v:'down',b:'stay',c:'none'},
+  lines:[['旁白','你轉身離開。操場上傳來打鬥聲，下一節上課鐘響起。']],
+  tl:['當下','衝突持續，有人受傷。','一週後','小辰被帶到學務處，阿勇則說是對方先動手，沒有人幫小辰說話。','一個月後','小辰被轉班，阿勇卻沒有受到相同處理。事情從頭到尾沒有被好好看清。'],
+  why:'自保可以理解，但離開會讓真相缺少證人，原本的受害者可能反而被誤解。提供你看到的事實，是你能做的重要幫助。'}
+ ],
+ tip:'被欺負很久而反擊，也可能被學校視為衝突事件。主動說明完整經過，並向導師、輔導室求助。需要時可以撥 1953 反霸凌專線。'}
+];
+// ================= 3D 世界 =================
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const stage=$('stage');
+let renderer;
+try{renderer=new THREE.WebGLRenderer({antialias:true});}
+catch(e){stage.innerHTML='<div style="padding:40px;color:#f1f0e6">這個瀏覽器無法顯示 3D 畫面，請改用較新版本的 Chrome、Safari 或 Edge。</div>';return;}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+stage.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(70,1,0.1,60);
+camera.rotation.order='YXZ';
+scene.add(new THREE.HemisphereLight(0xffffff,0x9a8f78,0.95));
+const sun=new THREE.DirectionalLight(0xffffff,0.55);sun.position.set(4,8,6);scene.add(sun);
+let world=new THREE.Group();scene.add(world);
+let colliders=[];let npcs=[];
+const mats={};
+const mat=c=>mats[c]||(mats[c]=new THREE.MeshLambertMaterial({color:c}));
+function resize(){
+  const w=stage.clientWidth||window.innerWidth,h=stage.clientHeight||window.innerHeight;
+  renderer.setSize(w,h,false);camera.aspect=w/h;camera.fov=(w/h<0.8)?82:70;camera.updateProjectionMatrix();
+}
+window.addEventListener('resize',resize);resize();
+
+function box(w,h,d,c,x,y,z,col){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),(typeof c==='object')?c:mat(c));
+  m.position.set(x,y,z);world.add(m);
+  if(col)colliders.push({x1:x-w/2,x2:x+w/2,z1:z-d/2,z2:z+d/2});
+  return m;
+}
+function tex(lines,w,h,bg,fg,size){
+  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+  const g=cv.getContext('2d');
+  if(bg){g.fillStyle=bg;g.fillRect(0,0,w,h);}
+  g.fillStyle=fg;g.textAlign='center';g.textBaseline='middle';
+  g.font='700 '+size+'px "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
+  lines.forEach((t,i)=>g.fillText(t,w/2,h*(i+1)/(lines.length+1)));
+  return new THREE.CanvasTexture(cv);
+}
+function plane(w,h,t,x,y,z,ry){
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:t}));
+  m.position.set(x,y,z);m.rotation.y=ry||0;world.add(m);return m;
+}
+function poster(x,y,z,ry){
+  plane(1.5,1.05,tex(['友善校園','不加入・不轉傳','告訴老師・撥 1953'],512,360,'#1d3a33','#f1f0e6',38),x,y,z,ry);
+}
+function clearWorld(){
+  scene.remove(world);
+  world.traverse(o=>{
+    if(o.geometry)o.geometry.dispose();
+    if(o.material&&o.material.map){o.material.map.dispose();o.material.dispose();}
+  });
+  world=new THREE.Group();scene.add(world);colliders=[];npcs=[];
+}
+function shell(floor,wall){
+  box(15.2,0.2,15.2,floor,0,-0.1,0);
+  box(15.2,0.2,15.2,0xf3f0e6,0,3.5,0);
+  box(15.2,3.5,0.2,wall,0,1.75,-7.6);
+  box(15.2,3.5,0.2,wall,0,1.75,7.6);
+  box(0.2,3.5,15.2,wall,-7.6,1.75,0);
+  box(0.2,3.5,15.2,wall,7.6,1.75,0);
+  const lm=new THREE.MeshBasicMaterial({color:0xfffbe8});
+  for(let x=-4;x<=4;x+=4)for(let z=-5;z<=5;z+=5)box(1.6,0.05,0.5,lm,x,3.4,z);
+}
+function windows(side){
+  const gm=new THREE.MeshBasicMaterial({color:0xcfe6fa});
+  for(let z=-5;z<=5.6;z+=3.4){box(0.05,1.4,2.2,gm,side*7.48,1.9,z);box(0.07,0.06,2.3,0x8a8f96,side*7.47,1.2,z);}
+}
+function buildHall(){
+  shell(0xcbbd9a,0xe6e1d0);
+  const cols=[0x3f7f86,0x546e8a,0x5f8a6b];
+  let i=0;
+  for(let z=-6.8;z<=6.8;z+=0.95,i++)box(0.5,2.3,0.9,cols[i%3],7.3,1.15,z);
+  windows(-1);
+  box(0.5,0.45,2.2,0x8a6a47,-6.8,0.22,3,true);
+  poster(0,1.9,-7.48,0);poster(-7.47,1.9,-3,Math.PI/2);
+}
+function desk(x,z){
+  box(0.8,0.06,0.55,0xc9a46a,x,0.74,z);
+  box(0.7,0.7,0.4,0x9b7b4f,x,0.35,z,true);
+  box(0.42,0.05,0.42,0x5a7fa0,x,0.45,z+0.62);
+  box(0.42,0.4,0.05,0x5a7fa0,x,0.68,z+0.82);
+}
+function buildClass(){
+  shell(0xb69b72,0xe9e6d6);
+  plane(8,1.9,tex(['班會討論','尊重彼此・友善相處'],1024,243,'#24463c','#eceee0',54),0,1.85,-7.48,0);
+  box(8.3,0.1,0.08,0x8a6a47,0,0.9,-7.44);
+  box(1.6,0.8,0.7,0x8a6a47,-5,0.4,-6.4,true);
+  [-5.6,-4.2,4.2,5.6].forEach(x=>[0.2,1.9,3.6,5.2].forEach(z=>desk(x,z)));
+  windows(-1);poster(7.47,1.9,-3,-Math.PI/2);
+}
+function buildCanteen(){
+  shell(0xd6ccb8,0xeee6d2);
+  [-5.4,5.4].forEach(x=>{
+    box(1.1,0.08,12,0xc8a273,x,0.78,0,true);
+    box(0.9,0.7,11.6,0x8c6c44,x,0.35,0);
+    box(0.4,0.45,12,0x6a7e8f,x-1.35,0.22,0);box(0.4,0.45,12,0x6a7e8f,x+1.35,0.22,0);
+    for(let z=-5;z<=5;z+=2.5)box(0.5,0.04,0.7,0xe6e6e6,x,0.84,z);
+  });
+  box(10,1,0.8,0xb5b9bd,0,0.5,-6.8,true);
+  plane(4,1.2,tex(['今日午餐','雞腿飯・青菜・湯'],768,230,'#2b3b36','#f1f0e6',56),0,2.4,-7.48,0);
+  windows(-1);poster(7.47,1.9,-3,-Math.PI/2);
+}
+function buildYard(){
+  box(70,0.2,70,0x6f9a6b,0,-0.2,0);
+  box(15.2,0.1,15.2,0x56789a,0,-0.05,0);
+  const wl=0xf1f0e6;
+  box(14.6,0.02,0.1,wl,0,0.01,-7.3);box(14.6,0.02,0.1,wl,0,0.01,7.3);
+  box(0.1,0.02,14.6,wl,-7.3,0.01,0);box(0.1,0.02,14.6,wl,7.3,0.01,0);
+  box(14.6,0.02,0.1,wl,0,0.01,0);
+  const ring=new THREE.Mesh(new THREE.RingGeometry(1.7,1.8,40),new THREE.MeshBasicMaterial({color:wl,side:THREE.DoubleSide}));
+  ring.rotation.x=-Math.PI/2;ring.position.set(0,0.02,0);world.add(ring);
+  box(0.15,3.2,0.15,0x444444,0,1.6,-7.0);
+  box(1.8,1.1,0.06,0xffffff,0,3.0,-6.78);
+  const hoop=new THREE.Mesh(new THREE.TorusGeometry(0.23,0.025,8,20),new THREE.MeshBasicMaterial({color:0xf08a30}));
+  hoop.rotation.x=Math.PI/2;hoop.position.set(0,2.7,-6.5);world.add(hoop);
+  box(15.4,0.9,0.06,0x4d6a54,0,0.45,-7.7);box(15.4,0.9,0.06,0x4d6a54,0,0.45,7.7);
+  box(0.06,0.9,15.4,0x4d6a54,-7.7,0.45,0);box(0.06,0.9,15.4,0x4d6a54,7.7,0.45,0);
+  box(34,9,2,0xe3d3b0,0,4.5,-16);
+  const wm=new THREE.MeshBasicMaterial({color:0x6e8ba5});
+  for(let x=-14;x<=14;x+=3)for(let y=2;y<=7;y+=2.5)box(1.4,1.2,0.1,wm,x,y,-14.95);
+  [[-11,-6],[11,-3],[-12,4],[12,6],[-10,-12],[10,-12]].forEach(p=>{
+    box(0.4,2.2,0.4,0x6b4b2f,p[0],1.1,p[1]);
+    const s=new THREE.Mesh(new THREE.SphereGeometry(1.7,10,8),mat(0x3f7a4a));s.position.set(p[0],3.4,p[1]);world.add(s);
+  });
+}
+const SKIN=[0xf1c9a5,0xe0ac82,0xd8a077,0xf4d3b5];
+function makeNPC(d,idx){
+  const g=new THREE.Group();
+  const M=(w,h,dd,c)=>new THREE.Mesh(new THREE.BoxGeometry(w,h,dd),mat(c));
+  const legL=M(0.18,0.8,0.2,0x2f3b52);legL.position.set(-0.12,0.4,0);
+  const legR=M(0.18,0.8,0.2,0x2f3b52);legR.position.set(0.12,0.4,0);
+  const torso=M(0.5,0.64,0.28,d.c);torso.position.y=1.12;
+  g.add(legL,legR,torso);
+  function arm(sx){
+    const p=new THREE.Group();p.position.set(sx*0.33,1.4,0);
+    const a=M(0.13,0.55,0.13,d.c);a.position.y=-0.26;p.add(a);
+    const h=new THREE.Mesh(new THREE.SphereGeometry(0.07,8,6),mat(SKIN[idx%4]));h.position.y=-0.56;p.add(h);
+    g.add(p);return p;
+  }
+  const armL=arm(-1),armR=arm(1);
+  const head=new THREE.Group();head.position.y=1.6;
+  const sk=new THREE.Mesh(new THREE.SphereGeometry(0.17,14,10),mat(SKIN[idx%4]));
+  const hair=new THREE.Mesh(new THREE.SphereGeometry(0.18,14,10),mat(0x2a2320));hair.scale.set(1,0.62,1.02);hair.position.set(0,0.07,-0.015);
+  const eyeM=new THREE.MeshBasicMaterial({color:0x222222});
+  const e1=new THREE.Mesh(new THREE.SphereGeometry(0.02,6,6),eyeM);e1.position.set(-0.06,0.01,0.16);
+  const e2=e1.clone();e2.position.x=0.06;
+  head.add(sk,hair,e1,e2);g.add(head);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex([d.n],256,64,'rgba(18,38,33,0.78)','#f1f0e6',34),depthTest:false,transparent:true}));
+  sp.scale.set(0.9,0.225,1);sp.position.y=2.05;sp.renderOrder=5;g.add(sp);
+  g.position.set(d.x,0,d.z);world.add(g);
+  const n={d,g,head,armL,armR,legL,legR,bx:d.x,bz:d.z,tx:d.x,tz:d.z,mood:null,ph:Math.random()*6,face:null};
+  npcs.push(n);return n;
+}
+function buildScene(sc){
+  clearWorld();
+  scene.background=new THREE.Color(sc.tint);
+  scene.fog=new THREE.Fog(sc.tint,sc.place==='yard'?22:14,sc.place==='yard'?48:30);
+  ({hall:buildHall,class:buildClass,canteen:buildCanteen,yard:buildYard})[sc.place]();
+  sc.npcs.forEach((d,i)=>makeNPC(d,i+SC.indexOf(sc)));
+  const v=npcs.find(n=>n.d.k==='v');
+  npcs.forEach(n=>{n.face=(n.d.k==='v')?npcs.find(m=>m.d.k==='b'):v;});
+}
+
+// ================= 遊戲流程 =================
+const hud=$('hud'),dotsEl=$('dots'),obj=$('objective'),hint=$('hint'),guide=$('guide'),dlg=$('dialog'),dWho=$('dWho'),dSay=$('dSay'),dNext=$('dNext'),joyEl=$('joy'),joyK=$('joyK');
+const isTouch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+if(isTouch)document.body.classList.add('touch');
+let state='title',cur=0,order=[0,1,2,3],res=[],lineQ=[],lineDone=null,resultTimer=0;
+const player={x:0,z:5.6,yaw:0,pitch:0};
+const keys={};const joy={x:0,y:0};
+const shuffle=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
+
+function blocked(x,z){
+  if(Math.abs(x)>6.8||Math.abs(z)>6.8)return true;
+  const r=0.35;
+  for(const c of colliders)if(x>c.x1-r&&x<c.x2+r&&z>c.z1-r&&z<c.z2+r)return true;
+  for(const n of npcs)if(Math.hypot(x-n.g.position.x,z-n.g.position.z)<0.62)return true;
+  return false;
+}
+function tryMove(dx,dz){const nx=player.x+dx,nz=player.z+dz;if(!blocked(nx,nz)){player.x=nx;player.z=nz;}}
+function move(dt){
+  let f=0,s=0;
+  if(keys.w||keys.arrowup)f+=1;
+  if(keys.s||keys.arrowdown)f-=1;
+  if(keys.d)s+=1;
+  if(keys.a)s-=1;
+  if(keys.arrowleft)player.yaw+=1.8*dt;
+  if(keys.arrowright)player.yaw-=1.8*dt;
+  f+=-joy.y;s+=joy.x;
+  const len=Math.hypot(f,s);if(len>1){f/=len;s/=len;}
+  const sp=3.2*dt;
+  tryMove((-Math.sin(player.yaw)*f+Math.cos(player.yaw)*s)*sp,0);
+  tryMove(0,(-Math.cos(player.yaw)*f-Math.sin(player.yaw)*s)*sp);
+  return len>0.05;
+}
+
+// ---- 人物動作
+function applyAfter(a){
+  const v=npcs.find(n=>n.d.k==='v');
+  npcs.forEach(n=>{
+    const k=n.d.k;
+    if(k==='v')n.st='v_'+a.v;
+    else if(k==='b'){n.st='b_'+a.b;if(a.b==='stop'){n.tx=n.bx+1.2;n.tz=n.bz-1.4;}}
+    else{
+      n.st='c_'+a.c;
+      if(a.c==='help'&&k==='w'){n.tx=v.bx+0.95;n.tz=v.bz+0.9;}
+      if(a.c==='help'&&k==='f'){n.tx=n.bx+1;n.tz=n.bz-1;}
+    }
+  });
+}
+function resetNPCs(){npcs.forEach(n=>{n.st='inc';n.tx=n.bx;n.tz=n.bz;n.g.position.set(n.bx,0,n.bz);n.g.scale.y=1;});}
+const ease=(a,b,k)=>a+(b-a)*Math.min(1,k);
+function animNPCs(dt,t){
+  for(const n of npcs){
+    const k=n.d.k,st=n.st||'inc',g=n.g;
+    const mx=n.tx-g.position.x,mz=n.tz-g.position.z;
+    g.position.x+=mx*Math.min(1,dt*2.2);g.position.z+=mz*Math.min(1,dt*2.2);
+    if(n.face){
+      const a=Math.atan2(n.face.g.position.x-g.position.x,n.face.g.position.z-g.position.z);
+      let da=a-g.rotation.y;da=Math.atan2(Math.sin(da),Math.cos(da));g.rotation.y+=da*Math.min(1,dt*6);
+    }
+    let headX=0.1,aR=0,aL=0,bob=0,sx=0,scY=1;
+    if(st==='inc'){
+      if(k==='v'){headX=0.55;aL=0.15;}
+      if(k==='b'){aR=-1.0+Math.sin(t*5+n.ph)*0.6;headX=-0.1;}
+      if(k==='f'){bob=Math.abs(Math.sin(t*7+n.ph))*0.05;}
+      if(k==='w'){headX=0.25;}
+    }else if(st==='v_up'){headX=-0.05;}
+    else if(st==='v_same'){headX=0.4;aL=0.12;}
+    else if(st==='v_down'){headX=0.85;scY=0.95;}
+    else if(st==='b_stop'){headX=0.35;}
+    else if(st==='b_stay'){aR=-0.5+Math.sin(t*3+n.ph)*0.25;}
+    else if(st==='b_angry'){aR=-1.3+Math.sin(t*9)*0.3;sx=Math.sin(t*30)*0.02;}
+    else if(st==='c_help'){headX=0;}
+    else if(st==='c_laugh'){bob=Math.abs(Math.sin(t*8+n.ph))*0.06;}
+    else if(st==='c_none'){headX=0.25;}
+    n.head.rotation.x=ease(n.head.rotation.x,headX,dt*5);
+    n.armR.rotation.x=ease(n.armR.rotation.x,aR,dt*6);
+    n.armL.rotation.x=ease(n.armL.rotation.x,aL,dt*6);
+    g.scale.y=ease(g.scale.y,scY,dt*4);
+    g.position.y=bob;
+    const walking=Math.hypot(mx,mz)>0.06;
+    n.legL.rotation.x=walking?Math.sin(t*10)*0.5:0;
+    n.legR.rotation.x=walking?-Math.sin(t*10)*0.5:0;
+    g.position.x+=sx;
+  }
+}
+
+// ---- 對話
+function say(lines,done){lineQ=lines.slice();lineDone=done;dlg.hidden=false;nextLine();}
+function nextLine(){
+  if(dlg.hidden)return;
+  const l=lineQ.shift();
+  if(!l){dlg.hidden=true;const d=lineDone;lineDone=null;if(d)d();return;}
+  dWho.textContent=l[0];dSay.textContent=l[1];
+  dNext.textContent=lineQ.length?'繼續':'好';
+}
+dNext.addEventListener('click',nextLine);
+
+// ---- 介面
+function drawDots(){
+  dotsEl.innerHTML=SC.map((s,i)=>'<span class="dot'+(res[i]&&res[i].tries.length?' done':'')+(i===cur?' now':'')+'" title="'+s.type+'"></span>').join('');
+}
+function startScene(i){
+  clearTimeout(resultTimer);
+  cur=i;const sc=SC[i];res[i]=res[i]||{tries:[]};
+  order=shuffle([0,1,2,3]);
+  buildScene(sc);
+  player.x=0;player.z=5.6;player.yaw=0;player.pitch=0;
+  ['start','result','decide','finale'].forEach(id=>$(id).hidden=true);
+  dlg.hidden=true;
+  hud.hidden=false;guide.hidden=false;obj.hidden=false;hint.hidden=false;joyEl.hidden=false;
+  $('sceneName').textContent=sc.name;
+  $('sceneType').textContent='情境 '+(i+1)+'／6 ・ '+sc.type;
+  drawDots();
+  obj.textContent=sc.objective;
+  hint.textContent='往前走，靠近前面的同學。拖曳畫面可以轉頭。';
+  state='explore';
+}
+function trigger(){
+  state='incident';hint.hidden=true;obj.hidden=true;joyEl.hidden=true;
+  say(SC[cur].incident,showDecide);
+}
+function showDecide(){
+  state='decide';
+  const sc=SC[cur],r=res[cur];
+  let h='<p class="kicker">情境 '+(cur+1)+'／6 ・ '+sc.type+'</p><h2>你會怎麼做？</h2>';
+  h+='<p class="muted">'+(r.tries.length?'時間回到剛剛那一刻。這次你想怎麼做？':'你是旁觀的同學。選一個做法，看看之後會發生什麼事。')+'</p><div class="opts">';
+  order.forEach((oi,k)=>{
+    const o=sc.options[oi],t=r.tries.includes(oi);
+    h+='<button class="opt'+(t?' tried':'')+'" data-i="'+oi+'"><span class="k">'+'ABCD'[k]+'</span><span>'+o.t+(t?'（已看過）':'')+'</span></button>';
+  });
+  h+='</div>';
+  const p=$('decidePanel');p.innerHTML=h;$('decide').hidden=false;p.scrollTop=0;
+  p.querySelectorAll('.opt').forEach(b=>b.addEventListener('click',()=>choose(+b.dataset.i)));
+}
+function choose(oi){
+  const sc=SC[cur],o=sc.options[oi];
+  $('decide').hidden=true;
+  res[cur].tries.push(oi);
+  state='consequence';
+  applyAfter(o.after);
+  say(o.lines,()=>{resultTimer=setTimeout(()=>showResult(oi),1100);});
+}
+function showResult(oi){
+  state='result';
+  const sc=SC[cur],o=sc.options[oi],R=RATE[o.r],r=res[cur];
+  let h='<p class="kicker">你的選擇 ・ '+sc.type+'</p><span class="badge '+R.c+'">'+R.n+'</span><h2>'+o.t+'</h2>';
+  h+='<div class="meter" role="img" aria-label="處置分數 '+R.s+' 分，滿分 3 分">'+[1,2,3].map(n=>'<i class="'+(n<=R.s?'on':'')+'"></i>').join('')+'</div>';
+  h+='<ul class="timeline">';
+  for(let i=0;i<o.tl.length;i+=2)h+='<li><b>'+o.tl[i]+'</b><span>'+o.tl[i+1]+'</span></li>';
+  h+='</ul><div class="why"><b>為什麼？</b> '+o.why+'</div><div class="tip">'+sc.tip+'</div>';
+  const distinct=new Set(r.tries).size;
+  h+='<p class="muted">這個情境你已經看過 '+distinct+'／4 種做法的後果。</p><div class="row">';
+  if(distinct<4)h+='<button class="btn" id="againBtn">看看其他選擇的後果</button>';
+  h+='<button class="btn'+(distinct<4?' ghost':'')+'" id="nextBtn">'+(cur<SC.length-1?'前往下一個情境':'完成演練，看總結')+'</button></div>';
+  const p=$('resultPanel');p.innerHTML=h;$('result').hidden=false;p.scrollTop=0;
+  const ab=$('againBtn');
+  if(ab)ab.addEventListener('click',()=>{$('result').hidden=true;resetNPCs();showDecide();});
+  $('nextBtn').addEventListener('click',()=>{if(cur<SC.length-1)startScene(cur+1);else showFinale();});
+}
+function showFinale(){
+  state='finale';hud.hidden=true;guide.hidden=true;hint.hidden=true;obj.hidden=true;joyEl.hidden=true;
+  let best=0,played=0;
+  let rows='';
+  SC.forEach((sc,i)=>{
+    const r=res[i];
+    if(!r||!r.tries.length){rows+='<tr><td>'+sc.type+'</td><td class="muted">尚未體驗</td><td>—</td></tr>';return;}
+    const f=sc.options[r.tries[0]],l=sc.options[r.tries[r.tries.length-1]];
+    played++;if(f.r==='best')best++;
+    rows+='<tr><td>'+sc.type+'</td><td><span class="'+RATE[f.r].c+'">'+RATE[f.r].n+'</span></td><td>'+(r.tries.length>1?'<span class="'+RATE[l.r].c+'">'+RATE[l.r].n+'</span>（共試 '+new Set(r.tries).size+' 種）':'—')+'</td></tr>';
+  });
+  let h='<p class="kicker">演練完成</p><h1>你的處置紀錄</h1>';
+  h+='<p>你體驗了 '+played+' 個情境，第一次就選到最佳處置的有 '+best+' 個。不是每一次都選對才重要，重要的是看懂為什麼。</p>';
+  h+='<div class="sumwrap"><table class="sum"><tr><th>霸凌類型</th><th>第一次選擇</th><th>最後一次選擇</th></tr>'+rows+'</table></div>';
+  h+='<h2 style="margin-top:20px">遇到霸凌，記住這四件事</h2><ul class="timeline">';
+  [['先顧安全','不用身體衝突對抗，避免自己受傷。'],['不加入','不笑、不按讚、不轉傳，也不跟著排擠。'],['留證據','記下時間、地點、人物、說了什麼；網路內容先截圖。'],['找大人','告訴導師、輔導老師或學務處。也可以撥教育部 1953 反霸凌專線（24 小時）。']].forEach(x=>{h+='<li><b>'+x[0]+'</b><span>'+x[1]+'</span></li>';});
+  h+='</ul><p class="muted">若現場有立即的危險，請先撥 110。你不需要一個人處理。</p>';
+  h+='<div class="row"><button class="btn" id="againAll">重新開始</button><button class="btn ghost" id="toTitle">回到首頁</button></div>';
+  const p=$('finalePanel');p.innerHTML=h;$('finale').hidden=false;p.scrollTop=0;
+  $('againAll').addEventListener('click',()=>{res=[];startScene(0);});
+  $('toTitle').addEventListener('click',()=>{res=[];toTitle();});
+}
+function toTitle(){
+  clearTimeout(resultTimer);
+  ['result','decide','finale'].forEach(id=>$(id).hidden=true);
+  dlg.hidden=true;hud.hidden=true;guide.hidden=true;hint.hidden=true;obj.hidden=true;joyEl.hidden=true;
+  buildScene(SC[0]);state='title';$('start').hidden=false;
+}
+
+// ---- 首頁
+const typesEl=$('start').querySelector('.types');
+typesEl.innerHTML=SC.map((s,i)=>'<button class="btn ghost" style="padding:8px 6px;font-size:.9rem" data-i="'+i+'">'+s.type+'</button>').join('');
+typesEl.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{res=[];startScene(+b.dataset.i);}));
+$('goBtn').addEventListener('click',()=>{res=[];startScene(0);});
+
+// ---- 輸入
+window.addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)&&state!=='title')e.preventDefault();
+  if(k==='e'||k==='enter'||k===' '){if(!dlg.hidden){nextLine();return;}}
+  keys[k]=true;
+});
+window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;});
+window.addEventListener('blur',()=>{for(const k in keys)keys[k]=false;joy.x=joy.y=0;});
+let drag=null;
+const cv=renderer.domElement;
+cv.addEventListener('pointerdown',e=>{drag={id:e.pointerId,x:e.clientX,y:e.clientY};try{cv.setPointerCapture(e.pointerId);}catch(_){}});
+cv.addEventListener('pointermove',e=>{
+  if(!drag||drag.id!==e.pointerId)return;
+  const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;
+  if(state==='explore'){player.yaw-=dx*0.005;player.pitch=Math.max(-1,Math.min(1,player.pitch-dy*0.004));}
+});
+const endDrag=e=>{if(drag&&drag.id===e.pointerId)drag=null;};
+cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
+let jid=null;
+function joyMove(e){
+  const r=joyEl.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+  let dx=e.clientX-cx,dy=e.clientY-cy;const m=Math.hypot(dx,dy),max=r.width/2-8;
+  if(m>max){dx*=max/m;dy*=max/m;}
+  joy.x=dx/max;joy.y=dy/max;joyK.style.transform='translate('+dx+'px,'+dy+'px)';
+}
+joyEl.addEventListener('pointerdown',e=>{jid=e.pointerId;try{joyEl.setPointerCapture(e.pointerId);}catch(_){}joyMove(e);e.preventDefault();});
+joyEl.addEventListener('pointermove',e=>{if(e.pointerId===jid)joyMove(e);});
+const joyEnd=e=>{if(e.pointerId===jid){jid=null;joy.x=joy.y=0;joyK.style.transform='';}};
+joyEl.addEventListener('pointerup',joyEnd);joyEl.addEventListener('pointercancel',joyEnd);
+joyEl.hidden=true;
+
+// ---- 主迴圈
+let last=performance.now();
+function lookAtCenter(dt){
+  const dx=0-player.x,dz=-2.4-player.z;
+  const a=Math.atan2(-dx,-dz);
+  let da=a-player.yaw;da=Math.atan2(Math.sin(da),Math.cos(da));
+  player.yaw+=da*Math.min(1,dt*3);player.pitch=ease(player.pitch,0,dt*3);
+}
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000);last=now;const t=now/1000;
+  let bobY=0;
+  if(state==='explore'){
+    const moving=move(dt);
+    if(moving)bobY=Math.sin(t*9)*0.03;
+    if(Math.hypot(player.x,player.z+2.4)<5.0)trigger();
+  }else if(state==='title'){
+    player.x=0;player.z=5.6;player.yaw=Math.sin(t*0.25)*0.35;player.pitch=0;
+  }else{lookAtCenter(dt);}
+  animNPCs(dt,t);
+  camera.position.set(player.x,1.55+bobY,player.z);
+  camera.rotation.set(player.pitch,player.yaw,0);
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+}
+buildScene(SC[0]);
+requestAnimationFrame(loop);
+})();
+</script>
+
+</body>
+</html>
